@@ -1,0 +1,13 @@
+{
+  "name": "atpack",
+  "owner": {
+    "name": "Anton Tarasov"
+  },
+  "plugins": [
+    {
+      "name": "ap",
+      "description": "atpack — fork of ultrapack with git automation removed; you own the branch and commits",
+      "source": "./plugins/ap"
+    }
+  ]
+}
