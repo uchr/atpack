@@ -1,12 +1,13 @@
 {
   "name": "atpack",
+  "description": "Anton Tarasov's Claude Code plugins: ap, a spec-driven workflow where the user owns git.",
   "owner": {
     "name": "Anton Tarasov"
   },
   "plugins": [
     {
       "name": "ap",
-      "description": "atpack — fork of ultrapack with git automation removed; you own the branch and commits",
+      "description": "Spec-driven workflow: design, plan, execute, verify, review. The user owns the branch and commits.",
       "source": "./plugins/ap"
     }
   ]

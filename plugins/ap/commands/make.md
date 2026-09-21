@@ -6,7 +6,18 @@ description: Orchestrate the full atpack workflow — slug, task file, design, p
 
 Drives a task through the full atpack workflow: one task file at `docs/tasks/<slug>.md`, evolving through Design → Plan → Conclusion. Each stage is a separate skill. You orchestrate; the skills do the work.
 
-The user manages git themselves: they create the branch (or work on `trunk` / `main`), they review staged changes between phases, they decide when to commit and amend. This workflow never runs `git commit`, `git checkout`, `git branch`, or `git worktree`.
+The user manages git themselves: they create the branch (or work on `trunk` / `main`), they decide when to commit and amend. This workflow never runs `git commit`, `git checkout`, `git branch`, or `git worktree`.
+
+<required>
+Before responding or writing the task file, read `${CLAUDE_PLUGIN_ROOT}/skills/_brevity.md` and `${CLAUDE_PLUGIN_ROOT}/skills/_principles.md`. Apply them throughout the workflow.
+</required>
+
+## Task file header
+
+The header is the state machine every skill reads on entry. Exactly one writer per transition:
+
+- `**Kind:**` — `change` | `answer` | `review`, written by this command in step 3/4, read by `ap:udesign`, `ap:ureview` and the Rules below.
+- `**Status:**` — `design` (this command, on create) → `planning` (`ap:udesign`) → `executing` (`ap:uplan`) → `verifying` (`ap:uexecute`) → `reviewing` (`ap:uverify`) → `done` (`ap:ureview`, or `ap:udesign` for Kind `answer`). A skipped stage's status is written by this command when it skips.
 
 ## Arguments
 
@@ -26,14 +37,16 @@ Before creating a new task file, check if `docs/tasks/<slug>.md` already exists.
   - `design` → continue design
   - `planning` → run `ap:uplan`
   - `executing` → run `ap:uexecute`
+  - `verifying` → run `ap:uverify`
   - `reviewing` → run `ap:ureview`
-  - `done` → ask the user what they want to do (start a follow-up, re-open, view conclusion)
+  - `done` with new arguments → this is a follow-up. Create `docs/tasks/<slug>-2.md` (next free number) from the template with the first line under the title "Follow-up of `<slug>.md`", append `- Follow-up: <slug>-2.md (YYYY-MM-DD)` to the original's `## Conclusion`, and run the normal flow in the new file
+  - `done` without arguments → print the Conclusion
 - Doesn't exist: proceed to step 3.
 - Multiple in-flight tasks: if more than one `docs/tasks/*.md` has Status ≠ `done`, list them and ask which one the user means (or whether this is a new task).
 
 ### 3. Create task file
 
-Create `docs/tasks/<slug>.md` from the template. Status = `design`.
+Create `docs/tasks/<slug>.md` from the template. Status = `design`. Write the resolved Kind (step 4) into the `**Kind:**` line, never the placeholder.
 
 Template:
 
@@ -41,6 +54,10 @@ Template:
 # <Task Title>
 
 **Status:** design
+**Kind:** <change | answer | review>
+
+## Context
+<empty — filled by ap:udesign: observations about how things are now that motivate the design>
 
 ## Design
 <empty — filled by ap:udesign>
@@ -63,31 +80,48 @@ Template:
 ## Verify
 <empty — filled by ap:uverify>
 
+## Code smells
+<empty — file:line + one-line smell passed while exploring and left unfixed; deleted if none>
+
 ## Conclusion
 <empty — filled by ap:ureview>
 ```
 
-### 4. Size classification
+### 4. Kind and size
 
-Based on the task description, classify size:
+Classify the Kind from the request yourself, state it in the first reply, and write it into the task file's `**Kind:**` line before invoking any skill:
 
-- Trivial — one-line change, typo, rename. Skip Design and Plan. Go straight to Execute. Status file still created.
-- Small — single file or single concept change. Skip Design. Plan runs.
+- `answer` — the request is a question, or says "don't change" / "just answer" / "investigate" / "explain".
+- `review` — the request says "review <MR|branch>" or names a colleague's branch.
+- `change` — everything else.
+
+For Kind `change`, also classify size:
+
+- Trivial — one-line change, typo, rename. Skip Design and Plan (set Status `executing`). Go straight to Execute. Status file still created.
+- Small — single file or single concept change. Skip Design (set Status `planning`). Plan runs.
 - Medium / Large — full flow.
 
 Confirm the classification with the user before skipping any stage. When unsure, ask.
 
+### 4a. Kind `answer`
+
+Invoke `ap:udesign` in research mode. `## Design` holds the answer, and `ap:udesign` writes the Conclusion, deletes the `## Plan` and `## Verify` headers, and sets Status `done`. Then go to Finish — no Plan, Execute, Verify, or Review.
+
+### 4b. Kind `review`
+
+Delegate to `ap:ureview <ref>`. It reuses the task file from step 3, writes Design = review scope and the questions asked, deletes the `## Plan` and `## Verify` headers, stays read-only, writes severity-tiered findings to `## Conclusion`, and sets Status `done`. On a colleague's branch the fixes are left to the author. Then go to Finish.
+
 ### 5. Design stage (unless skipped)
 
-Invoke `ap:udesign`. It populates `## Design`, `### Invariants` (IV), `### Principles` (PC), `### Assumptions` (AS), `### Unknowns` (UK), and records `TDD: yes / no (reason)`. Status → `planning`.
+Invoke `ap:udesign`. It populates `## Context`, `## Design`, `### Invariants` (IV), `### Principles` (PC), `### Assumptions` (AS), `### Unknowns` (UK), records `TDD: yes / no (reason)`, and sets Status `planning`.
 
 ### 6. Plan stage (unless skipped)
 
-Invoke `ap:uplan`. It populates `## Plan`. Status → `executing`.
+Invoke `ap:uplan`. It populates `## Plan` and sets Status `executing`.
 
 ### 7. Execute stage
 
-Invoke `ap:uexecute`. Implements the plan, staging changes after each phase for the user to review. The user is expected to inspect `git diff --cached` between phases and unstage anything they don't want.
+Invoke `ap:uexecute`. Implements the plan and stages each phase. Runs to Verify without stopping.
 
 ### 8. Verify loop
 
@@ -95,13 +129,15 @@ Invoke `ap:uverify`. On failure: `ap:uverify` describes how each failure *should
 
 ### 9. Review stage
 
-Status → `reviewing`. Invoke `ap:ureview`. It dispatches `ap:reviewer`, processes findings, fills `## Conclusion`. Status → `done`.
+Invoke `ap:ureview`. It dispatches `ap:reviewer`, processes findings, and fills `## Conclusion`.
 
 Once the task is concluded as `done`, run the docs-refresh check (see below).
 
+From Execute to Finish the flow does not end the turn or ask. It stops only on the blockers listed in `ap:uexecute`.
+
 ### 10. Finish
 
-Print a summary of what's staged (`git diff --cached --stat`) and remind the user that committing, amending, and pushing are theirs to do. The workflow is complete.
+Grep `**Status:** done` in the task file and set it if it is absent. Print a summary of what's staged (`git diff --cached --stat`) and remind the user that committing, amending, and pushing are theirs to do. The workflow is complete.
 
 ## After task is done — docs refresh
 
@@ -134,7 +170,7 @@ Stop and ask the user when:
 
 ## Rules
 
-- Never skip Review
+- Never skip Review for Kind `change`
 - Never run `git commit`, `git commit --amend`, `git checkout`, `git branch`, `git worktree`, or `git push`. The user owns all branch and commit operations
 - Keep the task file as the single source of truth — each stage reads it, each stage writes to it
 - External spec / design docs (e.g. anything under `docs/specs/`) are read-only during execute. If a stage finds the spec is wrong, surface it to the user — don't mutate it silently

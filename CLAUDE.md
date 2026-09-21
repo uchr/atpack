@@ -1,6 +1,6 @@
 # atpack
 
-Claude Code plugin for spec-driven development; fork of [btseytlin/ultrapack](https://github.com/btseytlin/ultrapack) with all git automation removed (no per-phase commits, no worktree creation, no branch management). The user owns git; the workflow only `git add`s after each phase.
+Claude Code plugin for spec-driven development. The user owns git: no commits, branches or worktrees from any skill, the workflow only `git add`s. Fork of [btseytlin/ultrapack](https://github.com/btseytlin/ultrapack).
 
 ## Repo layout
 

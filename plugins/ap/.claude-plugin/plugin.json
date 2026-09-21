@@ -1,7 +1,7 @@
 {
   "name": "ap",
-  "version": "0.1.0",
-  "description": "atpack — fork of ultrapack with git automation removed; you own the branch and commits",
+  "version": "0.2.0",
+  "description": "Spec-driven workflow: design, plan, execute, verify, review. The user owns the branch and commits.",
   "author": {
     "name": "Anton Tarasov",
     "email": "uchiro.me@gmail.com"

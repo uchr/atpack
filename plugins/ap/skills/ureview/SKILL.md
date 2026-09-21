@@ -1,34 +1,34 @@
 ---
 name: ureview
-description: Use after verify passes to get an independent check on the work. Dispatches ap:reviewer (critical, high-confidence filter), processes its findings fairly (no performative agreement, no reflexive acceptance), fills the task file's `## Conclusion`.
+description: Use after verify passes for the future maintainer's audit — sit in the chair of the person who'll touch this code in 3-6 months and ask "what will bite us later?" at the decision level. Surfaces wrong abstractions, load-bearing-but-unobvious shapes, next-change traps, drift from surrounding code. Raises a Scope flag if the whole change looks like the wrong call. Dispatches ap:reviewer for an independent, critical review and fills the task file's `## Conclusion`.
 ---
 
 # Review
 
-Review is a process, not just a section. Its end product is the `## Conclusion` section of the task file, filled in based on an independent code review and the work that was done.
+Find choices that will make the next change difficult: wrong abstractions, implicit constraints, checks in the wrong layer, or drift from surrounding code. Question the scope when the completed work exposes a wrong premise, but leave redesign to the user and `ap:udesign`.
 
-## When to invoke
+In the full `/ap:make` workflow, run after verification passes, regardless of task size. Save the outcome in `## Conclusion`.
 
-- After `ap:uverify` passes
-- Never skipped, regardless of task size
+## Standalone review (Kind `review`)
+
+Invoked as `ap:ureview <ref>` with a branch or MR ref. The task file exists from `/ap:make` step 3 (create it from the template if invoked directly): set Kind `review`, write `## Design` as the review scope and the questions asked, delete the `## Plan` and `## Verify` headers, and review the ref's own diff instead of the working tree.
+
+```bash
+BASE=$(git merge-base <ref> trunk 2>/dev/null || git merge-base <ref> main)
+git diff "$BASE" <ref>
+```
+
+Never edit a file or `git add` in this kind — on a colleague's branch the fixes are left to the author. `## Conclusion` holds the severity-tiered findings, and Status becomes `done`. The working-tree `BASE` block in step 1 belongs to Kind `change`.
 
 ## Brevity
 
-<required>
-Before writing the `## Conclusion`, read `plugins/ap/skills/_brevity.md`. Apply its five principles. `Outcome:` is ≤1 sentence — never re-narrate the diff. Omit subsections whose content would be "none" / "clean" / "no deviations" / "no findings" / the default: `Plan adherence`, `Review findings`, `Future work`, `Verified by`, `Deviations from plan`, `Known risks`. `Invariants:`, `Assumptions check:`, and `Unknowns outcome:` stay when the task had any IV / AS / UK — they carry audit value even on pass. The Exception clause still holds: findings, deviations, risks, violated assumptions, and deferrals always carry evidence and "why".
-</required>
+Read the [brevity rules](../_brevity.md). Keep the outcome to one sentence. Omit empty findings, deviations, risks, scope flags, and future work. Retain invariant evidence and assumption or unknown outcomes whenever the task defined them.
 
-## Two roles, two attitudes
+Keep `## Code smells` separate from the conclusion. Delete it if empty. Promote a recorded smell to future work only when scheduling its fix, without duplicating the entry.
 
-<reviewer-role>
-The `ap:reviewer` subagent is **critical**. It is dispatched with a diff, a plan, and invariants — but not the rationale behind the changes. It looks for violated invariants, plan misalignment, bugs, and risks. Confidence-filtered (≥80). Severity-tiered.
-</reviewer-role>
+## Independent reviewer and dispatcher
 
-<dispatcher-role>
-You (the dispatcher) are **fair**. Fair means: take every finding seriously, but verify it against the codebase before acting. Fair is neither reflexive agreement nor reflexive pushback. Fair is: restate → verify → evaluate → decide.
-</dispatcher-role>
-
-The asymmetry is deliberate. A tough reviewer catches more real issues; a fair dispatcher avoids overcorrecting on mistaken calls.
+The `ap:reviewer` subagent is critical and reports concrete issues at confidence 80 or above, classified by severity. You (the dispatcher) are fair: verify each finding against the codebase before accepting or rejecting it. A tough reviewer catches more real issues; a fair dispatcher avoids overcorrecting on mistaken calls. Do not replace independent review with your own inspection.
 
 ## Process
 
@@ -54,30 +54,18 @@ Dispatch the `ap:reviewer` agent with:
 - Working directory — the user's `pwd` (absolute path), **not** the repo root. The agent does not inherit `cwd` reliably and must run git from there without `cd`-ing to git toplevel.
 - A note on the diff scope: "review the merged diff of working tree vs `$BASE` — this is the full task surface, regardless of which parts the user has committed yet"
 
-<system-reminder>
-Do **not** pass session history to the reviewer. The reviewer must not see the rationale behind changes — only the Plan, Invariants, and diff. Independence is the point.
-</system-reminder>
+The reviewer's evidence is the task contract and the diff. Do not pass session history or the rationale behind the changes — independence is the point.
 
-### 2. Read feedback without reacting
+### 2. Evaluate findings
 
-Receive the reviewer's output. Do not immediately reply with fixes or pushback. Classify first:
+Classify findings as critical, important, or a problem with the plan. For each:
 
-- Critical: fix before proceeding
-- Important: fix before the user commits / amends
-- Plan finding: the plan itself may be wrong
+1. Restate it. Ask the reviewer to clarify if its meaning is unclear.
+2. Open the affected code and verify that the defect exists.
+3. Check whether the proposed fix suits this design and codebase.
+4. Decide to fix, reject with technical reasons, or defer to the user.
 
-### 3. Evaluate each item fairly
-
-<required>
-For every finding:
-
-1. Restate in your own words. If you can't restate it, ask the reviewer to clarify — don't guess.
-2. Verify against the codebase. Does the issue actually exist as described? Open the file, read the lines.
-3. Evaluate technically: is the suggested fix right for *this* codebase and the Design?
-4. Decide: implement, push back with technical reasoning, or escalate to the user.
-</required>
-
-### 4. Announce the plan before editing
+### 3. Announce the decision before editing
 
 <required>
 Before any fix goes in, tell the user what you decided for each finding. One line per finding:
@@ -85,63 +73,51 @@ Before any fix goes in, tell the user what you decided for each finding. One lin
 - your verdict (fix / push back / defer),
 - if fixing: the exact change you are about to make.
 
-This is a short summary — the user can interject, then you apply the fixes.
+This is a short summary, not an approval pause: apply verified in-scope fixes straight after it. A review-only task stays read-only.
 </required>
 
-<bad-example>
-"Evaluating reviewer findings fairly." *(then a flurry of edits with no explanation)*
-</bad-example>
+Example: "The parser accepts an empty identifier. Confirmed. Add rejection at the parser boundary and a regression test."
 
-<good-example>
-"Reviewer findings:
-- Important #1: reviewer tool list missing `Bash`. Verdict: fix. Editing Design section of task file.
-- Important #2: try.md and step-back.md missing frontmatter. Verdict: fix. Adding frontmatter to both.
+### 4. Apply fixes
 
-Applying now."
-</good-example>
+Fix critical and important issues. Edit the file and `git add` the result. Do not commit.
 
-### 5. Apply fixes
+Compare the staged result with the task file's seed line (the first paragraph under the title). Record a mismatch as an important finding and fix it in scope, without asking.
 
-Fix Critical and Important issues. Edit the file and `git add` the result so the user can see it in their staged set when they review. Do not commit.
+Run [uexecute](../uexecute/SKILL.md#consistency-pass)'s consistency pass for each changed rule or pattern so sibling paths do not remain inconsistent. If fixes are substantial, dispatch the reviewer again on the new diff.
 
-<required>
-For every fix, run the consistency pass (same rule as `ap:uexecute`): if you're tightening a rule or changing a pattern, grep the staged diff and the wider repo for the same pattern and apply the change everywhere. Do not leave siblings in a mixed state — that's how the reviewer's next round finds the same class of issue four more times.
-</required>
-
-If fixes are substantial, re-dispatch the reviewer on the new diff.
-
-### 6. Write the `## Conclusion`
+### 5. Write the conclusion
 
 ```markdown
 ## Conclusion
 
-Outcome: <≤1 sentence summary of what was done. Don't re-narrate the diff.>
+Outcome: <one sentence on what was done — do not re-narrate the diff>
 
 Invariants:
-- IV1 — <how it was verified>
-- IV2 — <...>
+- IV1 — <verification evidence>
 
-### Assumptions check   (omit entire subsection if the task had no AS)
-- AS1 — held | violated | unverifiable — <one-line evidence or "why unverifiable">
-- AS2 — ...
+### Assumptions check
+- AS1 — held | violated | unverifiable — <evidence or reason>
 
-### Unknowns outcome   (omit entire subsection if the task had no UK)
-- UK1 — resolved | still-open — <one-line resolution, or why it's still open>
-- UK2 — ...
+### Unknowns outcome
+- UK1 — resolved | still-open — <answer or blocker>
 
-Plan adherence: <deviations>   (omit entire subsection if no deviations)
+Plan adherence: <deviations>
 
-Review findings:   (omit entire subsection if no Critical or Important)
-- Critical: <resolved, how>
-- Important: <resolved or explicitly deferred with justification>
+Review findings:
+- Critical: <resolution>
+- Important: <resolution or justified deferral>
 
-Future work:   (omit entire subsection if none — do not write "none")
-- <item> — Justification: <Design-scope line> OR <new fact discovered>
+Scope flag:
+- <reviewer's flag, preserved for the user>
 
-Verified by: <only non-default items: deferred smokes, manual checks the next reader needs to know about>   (omit if only the routine reviewer+verify ran)
+Future work:
+- <item and design-scope justification or newly discovered fact>
+
+Verified by: <material manual checks, deferred smokes, or other non-routine evidence>
 ```
 
-A violated AS is always material — it means the design rested on a premise that turned out false. Record evidence and, if it invalidates the outcome, either redo the affected phase or surface it to the user.
+Omit sections with no content. Do not omit violated assumptions or unresolved unknowns. A violated assumption needs evidence and, if it invalidates the outcome, a revised phase or a user decision. Preserve a scope flag for the user instead of silently redesigning the task.
 
 ## Receiving feedback — rules
 
@@ -160,19 +136,19 @@ Do:
 
 Pushback is legitimate when:
 - The suggestion breaks existing behavior
-- The reviewer lacks context only the Design has (e.g. intentional tradeoff)
+- The reviewer lacks context only the design has (e.g. intentional tradeoff)
 - The suggestion violates YAGNI (over-engineering an unused path)
-- The suggestion conflicts with explicit Design / Invariants decisions
+- The suggestion conflicts with explicit design or invariant decisions
 </dispatcher-rules>
 
 ## Never
 
 - Accept "ready to merge" without evidence
-- Hand back to the user with open Critical or Important findings
+- Hand back to the user with open Critical or Important findings (Kind `change`; Kind `review` hands every finding to the author)
 - Skip the Conclusion write-up
 - Run review on yourself (always use the subagent — preserve independence)
 - Run `git commit`, `git commit --amend`, or `git push`. The user owns those
 
 ## Terminal state
 
-Conclusion written, all Critical/Important resolved or explicitly deferred with justification → tell the user the workflow is done and remind them the staged-and-fixed changes are theirs to commit/amend.
+Conclusion written, all Critical/Important resolved or explicitly deferred with justification → tell the user the workflow is done and remind them the staged-and-fixed changes are theirs to commit/amend. Set Status to `done` as the last write.
